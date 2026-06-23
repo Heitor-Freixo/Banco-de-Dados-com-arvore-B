@@ -18,3 +18,9 @@ Parte 3:implementamos a função de busca na Árvore B em disco, que lê as pág
 
 Parte 4:implementamos o algoritmo de inserção clássico da Árvore B com técnica estrutural Top-Down (Inserção Preventiva). Criamos as funções inserir_chave, inserir_em_no_com_espaco e dividir_no_filho em btree.c para lidar com a divisão (split) de nós que atingem o limite físico de chaves da página. O algoritmo aloca novas páginas binárias sob demanda e promove a chave mediana de forma estável. As validações comprovaram a integridade e a ordenação dos registros gravados diretamente em disco.
 
+Parte 5:a lógica do núcleo do SGBD foi concluída com a implementação da rotina de remoção estruturada "Top-Down" preventiva na Árvore B em Disco. Foram desenvolvidas as funções de redistribuição de chaves (`pegar_emprestado_esquerda` e `pegar_emprestado_direita`) e a fusão de páginas físicas (`fundir_nos_irmaos`).
+
+Erros Superados:
+    Incompatibilidade de Gerenciamento de Espaço: Inicialmente, a lógica de fusão foi projetada tentando manipular uma lista ligada tradicional gravada diretamente nos nós descartados (`id_lista_livres`). Isso gerou erros de compilação (`struct unnamed has no field...`), pois a arquitetura real do nosso `storage.h` utiliza um vetor estático de cache interno no Superbloco (`paginas_livres` e `qtd_paginas_livres`). A solução foi refatorar o código para integrar-se perfeitamente com a função nativa `liberar_id_pagina()`.
+
+    Correções de Sintaxe e Tipografia: Foram corrigidos erros estritos de compilação, como a passagem incorreta do Superbloco por valor na escrita final (esquecimento do operador de endereço `&`) e um erro de digitação no vetor de ponteiros de filhos (`deslocamentos_filisons` corrigido para `deslocamentos_filhos`).

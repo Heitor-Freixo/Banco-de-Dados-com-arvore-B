@@ -1,0 +1,1 @@
+Parte reservada para explicar como a IA foi utilizada.
