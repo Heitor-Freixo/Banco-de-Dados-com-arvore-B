@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include <assert.h>
 #include "storage.h"
+#include "btree.h" // Incluindo o novo cabeçalho
 
 int main(int argc, char* argv[]) {
+    (void)argv; // Resolve o erro de parâmetro não utilizado
+
     if (argc > 1) {
-        printf("Executando testes de storage com nomes internos em português...\n");
+        printf("Executando testes de storage com nomes internos em portugues...\n");
         
         bool eh_novo;
         FILE* db = inicializar_armazenamento("banco_teste.bin", &eh_novo);
@@ -39,7 +42,9 @@ int main(int argc, char* argv[]) {
         assert(p3 == 1); 
         
         fclose(db);
-        printf("Todos os testes passaram!\n");
+        printf("\n=========================================\n");
+        printf("  PARABENS! Todos os testes passaram!\n");
+        printf("=========================================\n");
         return 0;
     }
 

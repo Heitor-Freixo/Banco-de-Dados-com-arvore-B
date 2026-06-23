@@ -5,10 +5,10 @@ CFLAGS = -Wall -Wextra -Werror -std=c11 -g
 
 # Arquivos e Diretórios
 ALVO = mini_sgbd
-FONTES = principal.c btree.c armazenamento.c
+FONTES = main.c btree.c storage.c
 OBJETOS = $(FONTES:.c=.o)
 
-# Alvo Padrão (Compila o executável principal)
+# Alvo Padrão (Compila o executável main)
 all: $(ALVO)
 
 $(ALVO): $(OBJETOS)
@@ -30,7 +30,12 @@ stress: clean $(OBJETOS)
 	./executor_estresse --stress
 
 # Limpeza dos arquivos compilados
+# Limpeza dos arquivos compilados (Ajustado para Windows)
 clean:
-	rm -f $(ALVO) executor_testes executor_estresse *.o *.bin
-
+	@if exist $(ALVO) del /f /q $(ALVO)
+	@if exist executor_testes del /f /q executor_testes
+	@if exist executor_estresse del /f /q executor_estresse
+	@if exist *.o del /f /q *.o
+	@if exist *.bin del /f /q *.bin
+	
 .PHONY: all test stress clean
