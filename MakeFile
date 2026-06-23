@@ -1,37 +1,36 @@
 # Variáveis de Compilação
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=c11 -g
-# Para habilitar sanitizers nas entregas futuras, você pode descomentar a linha abaixo:
 # CFLAGS += -fsanitize=address -fsanitize=undefined
 
 # Arquivos e Diretórios
-TARGET = mini_sgbd
-SRC = main.c btree.c storage.c
-OBJ = $(SRC:.c=.o)
+ALVO = mini_sgbd
+FONTES = principal.c btree.c armazenamento.c
+OBJETOS = $(FONTES:.c=.o)
 
 # Alvo Padrão (Compila o executável principal)
-all: $(TARGET)
+all: $(ALVO)
 
-$(TARGET): $(OBJ)
+$(ALVO): $(OBJETOS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Alvo de Testes Unitários e Funcionais
-test: CFLAGS += -DTEST_MODE
-test: clean $(OBJ)
-	$(CC) $(CFLAGS) -o test_runner $(OBJ)
-	./test_runner --unit
+test: CFLAGS += -DMODO_TESTE
+test: clean $(OBJETOS)
+	$(CC) $(CFLAGS) -o executor_testes $(OBJETOS)
+	./executor_testes --unit
 
 # Alvo de Teste de Estresse (Carga pesada para o relatório)
-stress: CFLAGS += -DSTRESS_MODE
-stress: clean $(OBJ)
-	$(CC) $(CFLAGS) -o stress_runner $(OBJ)
-	./stress_runner --stress
+stress: CFLAGS += -DMODO_ESTRESSE
+stress: clean $(OBJETOS)
+	$(CC) $(CFLAGS) -o executor_estresse $(OBJETOS)
+	./executor_estresse --stress
 
 # Limpeza dos arquivos compilados
 clean:
-	rm -f $(TARGET) test_runner stress_runner *.o *.bin
+	rm -f $(ALVO) executor_testes executor_estresse *.o *.bin
 
 .PHONY: all test stress clean

@@ -7,4 +7,5 @@ Passamos por dificuldades em sincronizar o git com os arquivos do computador, ho
 ## 23/06/26
 o arquivo de execução rigida foi criado (makefile), qualquer compilação deve passar por seus critérios (-Wall -Wextra -Werror)
 definida a arquitetura do projeto. Optou-se pelo tamanho de página de 4096 bytes (bloco de memória virtual) para espelhar os blocos do sistema operacional
-s
+
+Parte 2:criamos a base do I/O. Agora o sistema consegue criar um arquivo binário organizado em blocos de tamanho fixo. No começo desse arquivo, criamos uma área de controle (Superbloco) que sabe onde tudo começa. Também criamos um sistema inteligente: se algum dado for apagado, o espaço vazio é guardado para ser reutilizado depois, impedindo que o arquivo cresça sem necessidade. Por fim, fizemos testes rigorosos para garantir que o programa leia e grave sempre no lugar exato do arquivo, sem misturar ou corromper os dados."

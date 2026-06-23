@@ -3,49 +3,48 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 
-// Definição do tamanho do bloco/página alinhado com o S.O.
-#define PAGE_SIZE 4096
-
-// Ordem M calculada matematicamente para caber em 4096 bytes
+#define TAMANHO_PAGINA 4096
 #define M 200 
+#define MAX_PAGINAS_LIVRES 100 
 
-// Tipo para representar offsets/ponteiros de disco (posição em bytes dentro do arquivo)
-typedef int64_t disk_offset_t;
-#define NULL_OFFSET -1
+typedef int64_t deslocamento_disco_t;
+#define DESLOCAMENTO_NULO -1
 
-/**
- * Estrutura que representa o Cabeçalho (Header) de uma Página.
- * Armazena os metadados do nó da Árvore B.
- */
 typedef struct {
-    int32_t num_keys;        // Número atual de chaves no nó (Máximo: M - 1)
-    int32_t is_leaf;         // 1 se for nó folha, 0 se for nó interno (usado int para evitar problemas de padding do bool)
-    int64_t reserved;        // Espaço reservado para expansões futuras ou alinhamento (8 bytes)
-} PageHeader;
+    int32_t qtd_chaves;      
+    int32_t eh_folha;        
+    int64_t reservado;       
+} CabecalhoPagina;
 
-/**
- * Estrutura da Página/Nó da Árvore B clássica em disco.
- * Forçada a ter exatamente PAGE_SIZE (4096 bytes) através de uma região de preenchimento.
- */
 typedef struct {
-    PageHeader header;
+    CabecalhoPagina cabecalho;
+    int32_t chaves[M - 1];
+    deslocamento_disco_t deslocamentos_registros[M - 1];
+    deslocamento_disco_t deslocamentos_filhos[M];
+    uint8_t preenchimento[TAMANHO_PAGINA - (sizeof(CabecalhoPagina) + 
+                                           ((M - 1) * sizeof(int32_t)) + 
+                                           ((M - 1) * sizeof(deslocamento_disco_t)) + 
+                                           (M * sizeof(deslocamento_disco_t)))];
+} PaginaBTree;
 
-    // Espaço para as chaves (Matrículas) -> Máximo de M - 1 chaves
-    int32_t keys[M - 1];
+typedef struct {
+    uint64_t numero_magico;                         
+    int64_t proximo_id_pagina;                      
+    int64_t id_pagina_raiz;                         
+    int64_t paginas_livres[MAX_PAGINAS_LIVRES];     
+    int32_t qtd_paginas_livres;                     
+    uint8_t preenchimento[TAMANHO_PAGINA - 24 - (MAX_PAGINAS_LIVRES * 8) - 4]; 
+} SuperBloco;
 
-    // Na Árvore B clássica, cada chave possui um registro associado.
-    // Armazenamos aqui o offset de disco para onde o registro completo (tamanho variável) está salvo.
-    disk_offset_t record_offsets[M - 1];
-
-    // Ponteiros/Offsets de disco para os nós filhos -> Máximo de M filhos
-    disk_offset_t child_offsets[M];
-
-    // Preenchimento explícito (Padding) para garantir que a struct ocupe EXATAMENTE 4096 bytes em qualquer arquitetura
-    uint8_t padding[PAGE_SIZE - (sizeof(PageHeader) + 
-                                 ((M - 1) * sizeof(int32_t)) + 
-                                 ((M - 1) * sizeof(disk_offset_t)) + 
-                                 (M * sizeof(disk_offset_t)))];
-} BTreePage;
+// Funções exportadas por storage.c
+FILE* inicializar_armazenamento(const char* nome_arquivo, bool *eh_novo);
+bool ler_pagina(FILE* arquivo_db, int64_t id_pagina, PaginaBTree* pagina);
+bool escrever_pagina(FILE* arquivo_db, int64_t id_pagina, const PaginaBTree* pagina);
+bool ler_superbloco(FILE* arquivo_db, SuperBloco* sb);
+bool escrever_superbloco(FILE* arquivo_db, const SuperBloco* sb);
+int64_t alocar_pagina(FILE* arquivo_db, SuperBloco* sb);
+void liberar_id_pagina(SuperBloco* sb, int64_t id_pagina);
 
 #endif // STORAGE_H
