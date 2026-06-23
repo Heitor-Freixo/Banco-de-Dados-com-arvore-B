@@ -13,3 +13,5 @@ Por fim, fizemos testes rigorosos para garantir que o programa leia e grave semp
 OBS: o comando make não vem no windows(tem que instalar)
 
 pra que fui traduzir isso pra português, nenhuma chamada da certo.
+
+implementamos a função de busca na Árvore B em disco, que lê as páginas do arquivo binário e faz busca binária na RAM. Para tratar a concorrência exigida, a IA sugeriu inicialmente a biblioteca <pthread.h> (do Linux), o que travou a compilação no Windows. Corrigimos isso substituindo o código para a biblioteca nativa do Windows (CRITICAL_SECTION via <windows.h>). Também silenciamos avisos de variáveis não usadas na main com (void)argv;
