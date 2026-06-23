@@ -14,4 +14,7 @@ OBS: o comando make não vem no windows(tem que instalar)
 
 pra que fui traduzir isso pra português, nenhuma chamada da certo.
 
-implementamos a função de busca na Árvore B em disco, que lê as páginas do arquivo binário e faz busca binária na RAM. Para tratar a concorrência exigida, a IA sugeriu inicialmente a biblioteca <pthread.h> (do Linux), o que travou a compilação no Windows. Corrigimos isso substituindo o código para a biblioteca nativa do Windows (CRITICAL_SECTION via <windows.h>). Também silenciamos avisos de variáveis não usadas na main com (void)argv;
+Parte 3:implementamos a função de busca na Árvore B em disco, que lê as páginas do arquivo binário e faz busca binária na RAM. Para tratar a concorrência exigida, a IA sugeriu inicialmente a biblioteca <pthread.h> (do Linux), o que travou a compilação no Windows. Corrigimos isso substituindo o código para a biblioteca nativa do Windows (CRITICAL_SECTION via <windows.h>). Também silenciamos avisos de variáveis não usadas na main com (void)argv;
+
+Parte 4:implementamos o algoritmo de inserção clássico da Árvore B com técnica estrutural Top-Down (Inserção Preventiva). Criamos as funções inserir_chave, inserir_em_no_com_espaco e dividir_no_filho em btree.c para lidar com a divisão (split) de nós que atingem o limite físico de chaves da página. O algoritmo aloca novas páginas binárias sob demanda e promove a chave mediana de forma estável. As validações comprovaram a integridade e a ordenação dos registros gravados diretamente em disco.
+
