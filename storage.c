@@ -120,3 +120,141 @@ void liberar_id_pagina(SuperBloco* sb, int64_t id_pagina) {
         sb->qtd_paginas_livres++;
     }
 }
+
+void inicializar_buffer_pool(BufferPool* pool) {
+    InitializeCriticalSection(&pool->mutex_cache);
+    pool->lru_head = NULL;
+    pool->lru_tail = NULL;
+    
+    for (int i = 0; i < MAX_FRAMES; i++) {
+        pool->frames[i].id_pagina = DESLOCAMENTO_NULO;
+        pool->frames[i].pin_count = 0;
+        pool->frames[i].dirty = false;
+        pool->frames[i].prev = NULL;
+        pool->frames[i].next = NULL;
+    }
+}
+
+static void mover_para_cabeca_lru(BufferPool* pool, FrameBuffer* frame) {
+    if (pool->lru_head == frame) return;
+
+    // Desconecta o frame de sua posição atual
+    if (frame->prev) frame->prev->next = frame->next;
+    if (frame->next) frame->next->prev = frame->prev;
+
+    if (pool->lru_tail == frame) {
+        pool->lru_tail = frame->prev;
+    }
+
+    // Insere na cabeça (Mais Recentemente Usado)
+    frame->next = pool->lru_head;
+    frame->prev = NULL;
+    if (pool->lru_head) {
+        pool->lru_head->prev = frame;
+    }
+    pool->lru_head = frame;
+
+    if (!pool->lru_tail) {
+        pool->lru_tail = frame;
+    }
+}
+
+FrameBuffer* pin_pagina(BufferPool* pool, FILE* arquivo_db, int64_t id_pagina) {
+    EnterCriticalSection(&pool->mutex_cache);
+
+    // 1. Procura se a página já está mapeada na RAM (Cache Hit)
+    for (int i = 0; i < MAX_FRAMES; i++) {
+        if (pool->frames[i].id_pagina == id_pagina) {
+            pool->frames[i].pin_count++;
+            mover_para_cabeca_lru(pool, &pool->frames[i]);
+            LeaveCriticalSection(&pool->mutex_cache);
+            return &pool->frames[i];
+        }
+    }
+
+    // 2. Procura um slot completamente livre
+    for (int i = 0; i < MAX_FRAMES; i++) {
+        if (pool->frames[i].id_pagina == DESLOCAMENTO_NULO) {
+            pool->frames[i].id_pagina = id_pagina;
+            pool->frames[i].pin_count = 1;
+            pool->frames[i].dirty = false;
+            ler_pagina(arquivo_db, id_pagina, &pool->frames[i].pagina);
+            
+            // Registra na lista LRU
+            if (!pool->lru_head) {
+                pool->lru_head = &pool->frames[i];
+                pool->lru_tail = &pool->frames[i];
+            } else {
+                pool->frames[i].next = pool->lru_head;
+                pool->lru_head->prev = &pool->frames[i];
+                pool->lru_head = &pool->frames[i];
+            }
+            LeaveCriticalSection(&pool->mutex_cache);
+            return &pool->frames[i];
+        }
+    }
+
+    // 3. Cache Miss & Sem slots vazios: Varre a lista LRU de trás para frente buscando despejo (Eviction)
+    FrameBuffer* vitima = pool->lru_tail;
+    while (vitima != NULL) {
+        if (vitima->pin_count == 0) {
+            break; // Candidato ideal encontrado! Não está em uso por nenhuma thread
+        }
+        vitima = vitima->prev;
+    }
+
+    // Se TODAS as páginas estiverem pinadas (Thread starvation/falta de unpin no código)
+    if (!vitima) {
+        printf("CRITICAL ERROR: Buffer Pool esgotado! Todas as paginas estao pinadas.\n");
+        exit(1);
+    }
+
+    // Se a página vítima foi alterada, força o flush sincronizado em disco
+    if (vitima->dirty) {
+        escrever_pagina(arquivo_db, vitima->id_pagina, &vitima->pagina);
+    }
+
+    // Substitui a página antiga pela nova
+    vitima->id_pagina = id_pagina;
+    vitima->pin_count = 1;
+    vitima->dirty = false;
+    ler_pagina(arquivo_db, id_pagina, &vitima->pagina);
+
+    // Atualiza a posição dela para o topo de uso
+    mover_para_cabeca_lru(pool, vitima);
+
+    LeaveCriticalSection(&pool->mutex_cache);
+    return vitima;
+}
+
+void unpin_pagina(BufferPool* pool, int64_t id_pagina, bool foi_modificada) {
+    EnterCriticalSection(&pool->mutex_cache);
+    for (int i = 0; i < MAX_FRAMES; i++) {
+        if (pool->frames[i].id_pagina == id_pagina) {
+            if (foi_modificada) {
+                pool->frames[i].dirty = true;
+            }
+            if (pool->frames[i].pin_count > 0) {
+                pool->frames[i].pin_count--;
+            }
+            break;
+        }
+    }
+    LeaveCriticalSection(&pool->mutex_cache);
+}
+
+void flush_buffer_pool(BufferPool* pool, FILE* arquivo_db) {
+    EnterCriticalSection(&pool->mutex_cache);
+    for (int i = 0; i < MAX_FRAMES; i++) {
+        if (pool->frames[i].id_pagina != DESLOCAMENTO_NULO && pool->frames[i].dirty) {
+            escrever_pagina(arquivo_db, pool->frames[i].id_pagina, &pool->frames[i].pagina);
+            pool->frames[i].dirty = false;
+        }
+    }
+    LeaveCriticalSection(&pool->mutex_cache);
+}
+
+void destruir_buffer_pool(BufferPool* pool, FILE* arquivo_db) {
+    flush_buffer_pool(pool, arquivo_db);
+    DeleteCriticalSection(&pool->mutex_cache);
+}
