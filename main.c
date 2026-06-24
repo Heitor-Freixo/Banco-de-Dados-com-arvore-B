@@ -1,55 +1,154 @@
 #include <stdio.h>
-#include <assert.h>
-#include "storage.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
 #include "btree.h"
 
-int main(int argc, char* argv[]) {
-    (void)argv;
+// Função auxiliar para o Modo Benchmark (Carga Massiva)
+void executar_benchmark(GerenciadorBTree* btree) {
+    printf("\n==================================================\n");
+    printf("   INICIANDO CARGA MASSIVA DE 1.000.000 REGISTROS \n");
+    printf("==================================================\n\n");
 
-    if (argc > 1) {
-        printf("Executando testes do Passo 5 (Remocao e Underflow na Arvore B)...\n");
+    for (int32_t i = 1; i <= 1000000; i++) {
+        // Insere a chave e calcula um deslocamento fictício de registro
+        inserir_chave(btree, i, (deslocamento_disco_t)i * 8);
         
-        remove("banco_teste.bin");
-
-        bool eh_novo;
-        FILE* arquivo = inicializar_armazenamento("banco_teste.bin", &eh_novo);
-        assert(arquivo != NULL);
-        
-        GerenciadorBTree btree;
-        inicializar_btree(&btree, arquivo);
-
-        // 1. Carga inicial de dados
-        assert(inserir_chave(&btree, 50, 9000) == true);
-        assert(inserir_chave(&btree, 30, 8000) == true);
-        assert(inserir_chave(&btree, 70, 10000) == true);
-
-        // 2. Garante que os dados existem antes de remover
-        ResultadoBusca r_antes = buscar_chave(&btree, 30);
-        assert(r_antes.encontrada == true);
-
-        // 3. Execução da deleção estrutural
-        printf(" -> Removendo a chave 30...\n");
-        assert(remover_chave(&btree, 30) == true);
-
-        // 4. Validação: A chave não deve mais ser encontrada
-        ResultadoBusca r_depois = buscar_chave(&btree, 30);
-        assert(r_depois.encontrada == false);
-
-        // 5. Tentar deletar uma chave que já sumiu ou que nunca existiu
-        assert(remover_chave(&btree, 30) == false);
-        assert(remover_chave(&btree, 999) == false);
-
-        printf(" -> Teste de remocao basica concluido com sucesso!\n");
-
-        destruir_btree(&btree);
-        fclose(arquivo);
-        
-        printf("\n======================================================\n");
-        printf("  PARABÉNS! Remoção e fusão estrutural validadas!    \n");
-        printf("======================================================\n");
-        return 0;
+        // Atualiza a barra de progresso a cada 20.000 chaves
+        if (i % 20000 == 0) {
+            int percentual = i / 10000;
+            printf("\rProgresso: [");
+            for (int p = 0; p < 50; p++) {
+                if (p < percentual / 2) printf("#");
+                else printf("-");
+            }
+            printf("] %d%% ", percentual);
+            fflush(stdout);
+        }
     }
 
-    printf("Use 'make test' para rodar os testes automatizados.\n");
+    printf("\n\n==================================================\n");
+    printf("               RELATORIO DO BENCHMARK             \n");
+    printf("==================================================\n");
+    printf(" -> Chaves inseridas  : 1.000.000\n");
+    printf(" -> Leituras em Disco : %llu paginas\n", metrica_leituras_disco);
+    printf(" -> Escritas em Disco : %llu paginas\n", metrica_escritas_disco);
+    printf(" -> I/O Logico Total  : %llu operacoes\n", metrica_leituras_disco + metrica_escritas_disco);
+    printf("==================================================\n\n");
+}
+
+// Função auxiliar para o Modo Manual (Prompt interativo)
+void executar_modo_manual(GerenciadorBTree* btree) {
+    char comando[32];
+    int32_t chave;
+    
+    printf("\n==================================================\n");
+    printf("         MODO MANUAL ATIVADO - CONSOLE SGBD       \n");
+    printf(" Comandos disponiveis:                            \n");
+    printf("   inserir <chave>  - Insere uma chave na arvore  \n");
+    printf("   buscar <chave>   - Procura por uma chave       \n");
+    printf("   status           - Exibe as metricas de I/O    \n");
+    printf("   sair             - Retorna ao menu principal   \n");
+    printf("==================================================\n\n");
+
+    while (1) {
+        printf("sgbd> ");
+        fflush(stdout);
+        if (scanf("%31s", comando) != 1) break;
+
+        if (strcmp(comando, "sair") == 0) {
+            printf("[+] Retornando ao menu principal...\n\n");
+            break;
+        } 
+        else if (strcmp(comando, "inserir") == 0) {
+            if (scanf("%d", &chave) == 1) {
+                if (inserir_chave(btree, chave, (deslocamento_disco_t)chave * 8)) {
+                    printf("[OK] Chave %d inserida.\n", chave);
+                } else {
+                    printf("[ERRO] Falha ao inserir a chave %d.\n", chave);
+                }
+            }
+        } 
+        else if (strcmp(comando, "buscar") == 0) {
+            if (scanf("%d", &chave) == 1) {
+                ResultadoBusca res = buscar_chave(btree, chave);
+                if (res.encontrada) {
+                    printf("[SUCESSO] Chave %d encontrada!\n", chave);
+                    printf(" -> ID Pagina: %lld | Indice: %d | Paginas Lidas: %d\n", 
+                           res.id_pagina_onde_esta, res.indice_na_pagina, res.paginas_lidas);
+                } else {
+                    printf("[AVISO] Chave %d nao localizada na arvore.\n", chave);
+                }
+            }
+        } 
+        else if (strcmp(comando, "status") == 0) {
+            printf("\n--- METRICAS ATUAIS DO SISTEMA ---\n");
+            printf(" -> Leituras em Disco : %llu paginas\n", metrica_leituras_disco);
+            printf(" -> Escritas em Disco : %llu paginas\n", metrica_escritas_disco);
+            printf("----------------------------------\n\n");
+        } 
+        else {
+            printf("[ERRO] Comando desconhecido. Use: inserir, buscar, status ou sair.\n");
+            // Limpa o buffer de entrada residual
+            int c;
+            while ((c = getchar()) != '\n' && c != EOF);
+        }
+    }
+}
+
+int main() {
+    // Abre ou cria o arquivo de banco de dados definitivo
+    FILE* arquivo = fopen("banco_oficial.db", "rb+");
+    if (!arquivo) arquivo = fopen("banco_oficial.db", "wb+");
+    if (!arquivo) {
+        printf("[ERRO FATAL] Nao foi possivel acessar o arquivo banco_oficial.db!\n");
+        return 1;
+    }
+
+    GerenciadorBTree btree;
+    inicializar_btree(&btree, arquivo);
+
+    int opcao = 0;
+    while (opcao != 3) {
+        printf("==================================================\n");
+        printf("           SGBD INTERATIVO (B-TREE + BUFFER)      \n");
+        printf("==================================================\n");
+        printf(" 1. Executar Modo Benchmark (Carga 1M)\n");
+        printf(" 2. Entrar no Modo Manual (Console CLI)\n");
+        printf(" 3. Sair e Salvar tudo\n");
+        printf("==================================================\n");
+        printf("Escolha uma opcao: ");
+        fflush(stdout);
+        
+        if (scanf("%d", &opcao) != 1) {
+            // Tratamento caso o usuario digite letras no menu
+            int c;
+            while ((c = getchar()) != '\n' && c != EOF);
+            opcao = 0;
+            printf("\n[!] Entrada invalida. Escolha um numero.\n\n");
+            continue;
+        }
+
+        switch (opcao) {
+            case 1:
+                executar_benchmark(&btree);
+                break;
+            case 2:
+                executar_modo_manual(&btree);
+                break;
+            case 3:
+                printf("\n[+] Desalocando frames do Buffer Pool e sincronizando disco...\n");
+                break;
+            default:
+                printf("\n[!] Opcao invalida. Tente novamente.\n\n");
+                break;
+        }
+    }
+
+    // Garante o encerramento seguro e o flush final do buffer para o arquivo físico
+    destruir_btree(&btree);
+    fclose(arquivo);
+    
+    printf("[SUCESSO] Sistema encerrado com integridade referencial.\n");
     return 0;
 }

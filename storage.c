@@ -1,260 +1,175 @@
-#include "storage.h"
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#define __USE_MINGW_ANSI_STDIO 1
+
+#include <stdio.h>  
+#include <io.h>     
 #include <string.h>
-#include <stdlib.h>
+#include "storage.h"
 
-#define ASSINATURA_MAGICA 0x4946455342545245ULL // "IFESBTRE" em Hexadecimal
+#ifdef __MINGW32__
+int _fileno(FILE *stream);
+#endif
 
-FILE* inicializar_armazenamento(const char* nome_arquivo, bool *eh_novo) {
-    FILE* arquivo = fopen(nome_arquivo, "rb+");
+uint64_t metrica_leituras_disco = 0;
+uint64_t metrica_escritas_disco = 0;
+
+static void fsync_interno(FILE* arquivo) {
+    fflush(arquivo);
+    HANDLE handle = (HANDLE)_get_osfhandle(_fileno(arquivo));
+    if (handle != INVALID_HANDLE_VALUE) {
+        FlushFileBuffers(handle);
+    }
+}
+
+void inicializar_buffer_pool(BufferPool* bp) {
+    InitializeCriticalSection(&bp->mutex_pool);
+    for (int32_t i = 0; i < NUM_FRAMES; i++) {
+        bp->pool[i].id_pagina = DESLOCAMENTO_NULO;
+        bp->pool[i].pin_count = 0;
+        bp->pool[i].dirty = false;
+        InitializeCriticalSection(&bp->pool[i].mutex_frame);
+        bp->lru_lista[i] = i;
+    }
+}
+
+void destruir_buffer_pool(BufferPool* bp, FILE* arquivo) {
+    for (int32_t i = 0; i < NUM_FRAMES; i++) {
+        EnterCriticalSection(&bp->pool[i].mutex_frame);
+        // CORRIGIDO: Removido o 'DESCORRETO_NULO' duplicado/errado
+        if (bp->pool[i].id_pagina != DESLOCAMENTO_NULO && bp->pool[i].dirty) {
+            fseek(arquivo, bp->pool[i].id_pagina * sizeof(PaginaBTree), SEEK_SET);
+            fwrite(&bp->pool[i].pagina, sizeof(PaginaBTree), 1, arquivo);
+            metrica_escritas_disco++;
+            bp->pool[i].dirty = false;
+        }
+        LeaveCriticalSection(&bp->pool[i].mutex_frame);
+        DeleteCriticalSection(&bp->pool[i].mutex_frame);
+    }
+    DeleteCriticalSection(&bp->mutex_pool);
+}
+
+FrameBuffer* pin_pagina(BufferPool* bp, FILE* arquivo, int64_t id_pagina) {
+    EnterCriticalSection(&bp->mutex_pool);
     
-    if (arquivo == NULL) {
-        arquivo = fopen(nome_arquivo, "wb+");
-        if (arquivo == NULL) {
-            perror("Erro ao criar o arquivo de banco de dados");
-            return NULL;
-        }
-        *eh_novo = true;
-
-        SuperBloco sb;
-        memset(&sb, 0, sizeof(SuperBloco));
-        sb.numero_magico = ASSINATURA_MAGICA;
-        sb.proximo_id_pagina = 1; 
-        sb.id_pagina_raiz = DESLOCAMENTO_NULO; 
-        sb.qtd_paginas_livres = 0;
-
-        if (!escrever_superbloco(arquivo, &sb)) {
-            fprintf(stderr, "Erro fatal: falha ao inicializar o SuperBloco.\n");
-            fclose(arquivo);
-            return NULL;
-        }
-        
-        fflush(arquivo);
-    } else {
-        *eh_novo = false;
-        SuperBloco sb;
-        if (!ler_superbloco(arquivo, &sb) || sb.numero_magico != ASSINATURA_MAGICA) {
-            fprintf(stderr, "Erro: Arquivo corrompido ou formato inválido.\n");
-            fclose(arquivo);
-            return NULL;
-        }
-    }
-    
-    return arquivo;
-}
-
-bool ler_pagina(FILE* arquivo_db, int64_t id_pagina, PaginaBTree* pagina) {
-    if (id_pagina < 1 || arquivo_db == NULL || pagina == NULL) return false;
-
-    if (fseek(arquivo_db, id_pagina * TAMANHO_PAGINA, SEEK_SET) != 0) {
-        perror("Erro ao executar fseek na leitura da página");
-        return false;
-    }
-
-    size_t bytes_lidos = fread(pagina, 1, TAMANHO_PAGINA, arquivo_db);
-    if (bytes_lidos != TAMANHO_PAGINA) {
-        if (ferror(arquivo_db)) {
-            perror("Erro de leitura física na página");
-        }
-        return false;
-    }
-
-    return true;
-}
-
-bool escrever_pagina(FILE* arquivo_db, int64_t id_pagina, const PaginaBTree* pagina) {
-    if (id_pagina < 1 || arquivo_db == NULL || pagina == NULL) return false;
-
-    if (fseek(arquivo_db, id_pagina * TAMANHO_PAGINA, SEEK_SET) != 0) {
-        perror("Erro ao executar fseek na escrita da página");
-        return false;
-    }
-
-    size_t bytes_escritos = fwrite(pagina, 1, TAMANHO_PAGINA, arquivo_db);
-    if (bytes_escritos != TAMANHO_PAGINA) {
-        perror("Erro de escrita física na página");
-        return false;
-    }
-
-    return true;
-}
-
-bool ler_superbloco(FILE* arquivo_db, SuperBloco* sb) {
-    if (arquivo_db == NULL || sb == NULL) return false;
-
-    if (fseek(arquivo_db, 0, SEEK_SET) != 0) {
-        return false;
-    }
-
-    return fread(sb, 1, TAMANHO_PAGINA, arquivo_db) == TAMANHO_PAGINA;
-}
-
-bool escrever_superbloco(FILE* arquivo_db, const SuperBloco* sb) {
-    if (arquivo_db == NULL || sb == NULL) return false;
-
-    if (fseek(arquivo_db, 0, SEEK_SET) != 0) {
-        return false;
-    }
-
-    return fwrite(sb, 1, TAMANHO_PAGINA, arquivo_db) == TAMANHO_PAGINA;
-}
-
-int64_t alocar_pagina(FILE* arquivo_db, SuperBloco* sb) {
-    if (sb->qtd_paginas_livres > 0) {
-        sb->qtd_paginas_livres--;
-        int64_t id_reutilizado = sb->paginas_livres[sb->qtd_paginas_livres];
-        
-        escrever_superbloco(arquivo_db, sb);
-        return id_reutilizado;
-    }
-
-    int64_t novo_id = sb->proximo_id_pagina;
-    sb->proximo_id_pagina++;
-    
-    escrever_superbloco(arquivo_db, sb);
-    return novo_id;
-}
-
-void liberar_id_pagina(SuperBloco* sb, int64_t id_pagina) {
-    if (sb->qtd_paginas_livres < MAX_PAGINAS_LIVRES) {
-        sb->paginas_livres[sb->qtd_paginas_livres] = id_pagina;
-        sb->qtd_paginas_livres++;
-    }
-}
-
-void inicializar_buffer_pool(BufferPool* pool) {
-    InitializeCriticalSection(&pool->mutex_cache);
-    pool->lru_head = NULL;
-    pool->lru_tail = NULL;
-    
-    for (int i = 0; i < MAX_FRAMES; i++) {
-        pool->frames[i].id_pagina = DESLOCAMENTO_NULO;
-        pool->frames[i].pin_count = 0;
-        pool->frames[i].dirty = false;
-        pool->frames[i].prev = NULL;
-        pool->frames[i].next = NULL;
-    }
-}
-
-static void mover_para_cabeca_lru(BufferPool* pool, FrameBuffer* frame) {
-    if (pool->lru_head == frame) return;
-
-    // Desconecta o frame de sua posição atual
-    if (frame->prev) frame->prev->next = frame->next;
-    if (frame->next) frame->next->prev = frame->prev;
-
-    if (pool->lru_tail == frame) {
-        pool->lru_tail = frame->prev;
-    }
-
-    // Insere na cabeça (Mais Recentemente Usado)
-    frame->next = pool->lru_head;
-    frame->prev = NULL;
-    if (pool->lru_head) {
-        pool->lru_head->prev = frame;
-    }
-    pool->lru_head = frame;
-
-    if (!pool->lru_tail) {
-        pool->lru_tail = frame;
-    }
-}
-
-FrameBuffer* pin_pagina(BufferPool* pool, FILE* arquivo_db, int64_t id_pagina) {
-    EnterCriticalSection(&pool->mutex_cache);
-
-    // 1. Procura se a página já está mapeada na RAM (Cache Hit)
-    for (int i = 0; i < MAX_FRAMES; i++) {
-        if (pool->frames[i].id_pagina == id_pagina) {
-            pool->frames[i].pin_count++;
-            mover_para_cabeca_lru(pool, &pool->frames[i]);
-            LeaveCriticalSection(&pool->mutex_cache);
-            return &pool->frames[i];
-        }
-    }
-
-    // 2. Procura um slot completamente livre
-    for (int i = 0; i < MAX_FRAMES; i++) {
-        if (pool->frames[i].id_pagina == DESLOCAMENTO_NULO) {
-            pool->frames[i].id_pagina = id_pagina;
-            pool->frames[i].pin_count = 1;
-            pool->frames[i].dirty = false;
-            ler_pagina(arquivo_db, id_pagina, &pool->frames[i].pagina);
+    for (int32_t i = 0; i < NUM_FRAMES; i++) {
+        if (bp->pool[i].id_pagina == id_pagina) {
+            bp->pool[i].pin_count++;
             
-            // Registra na lista LRU
-            if (!pool->lru_head) {
-                pool->lru_head = &pool->frames[i];
-                pool->lru_tail = &pool->frames[i];
-            } else {
-                pool->frames[i].next = pool->lru_head;
-                pool->lru_head->prev = &pool->frames[i];
-                pool->lru_head = &pool->frames[i];
+            int32_t idx_lru = -1;
+            for (int32_t j = 0; j < NUM_FRAMES; j++) {
+                if (bp->lru_lista[j] == i) { idx_lru = j; break; }
             }
-            LeaveCriticalSection(&pool->mutex_cache);
-            return &pool->frames[i];
+            if (idx_lru != -1) {
+                for (int32_t j = idx_lru; j < NUM_FRAMES - 1; j++) {
+                    bp->lru_lista[j] = bp->lru_lista[j + 1];
+                }
+                bp->lru_lista[NUM_FRAMES - 1] = i;
+            }
+            
+            LeaveCriticalSection(&bp->mutex_pool);
+            return &bp->pool[i];
         }
     }
 
-    // 3. Cache Miss & Sem slots vazios: Varre a lista LRU de trás para frente buscando despejo (Eviction)
-    FrameBuffer* vitima = pool->lru_tail;
-    while (vitima != NULL) {
-        if (vitima->pin_count == 0) {
-            break; // Candidato ideal encontrado! Não está em uso por nenhuma thread
-        }
-        vitima = vitima->prev;
-    }
-
-    // Se TODAS as páginas estiverem pinadas (Thread starvation/falta de unpin no código)
-    if (!vitima) {
-        printf("CRITICAL ERROR: Buffer Pool esgotado! Todas as paginas estao pinadas.\n");
-        exit(1);
-    }
-
-    // Se a página vítima foi alterada, força o flush sincronizado em disco
-    if (vitima->dirty) {
-        escrever_pagina(arquivo_db, vitima->id_pagina, &vitima->pagina);
-    }
-
-    // Substitui a página antiga pela nova
-    vitima->id_pagina = id_pagina;
-    vitima->pin_count = 1;
-    vitima->dirty = false;
-    ler_pagina(arquivo_db, id_pagina, &vitima->pagina);
-
-    // Atualiza a posição dela para o topo de uso
-    mover_para_cabeca_lru(pool, vitima);
-
-    LeaveCriticalSection(&pool->mutex_cache);
-    return vitima;
-}
-
-void unpin_pagina(BufferPool* pool, int64_t id_pagina, bool foi_modificada) {
-    EnterCriticalSection(&pool->mutex_cache);
-    for (int i = 0; i < MAX_FRAMES; i++) {
-        if (pool->frames[i].id_pagina == id_pagina) {
-            if (foi_modificada) {
-                pool->frames[i].dirty = true;
+    int32_t frame_escolhido = -1;
+    for (int32_t i = 0; i < NUM_FRAMES; i++) {
+        int32_t idx_candidato = bp->lru_lista[i];
+        if (bp->pool[idx_candidato].pin_count == 0) {
+            frame_escolhido = idx_candidato;
+            for (int32_t j = i; j < NUM_FRAMES - 1; j++) {
+                bp->lru_lista[j] = bp->lru_lista[j + 1];
             }
-            if (pool->frames[i].pin_count > 0) {
-                pool->frames[i].pin_count--;
-            }
+            bp->lru_lista[NUM_FRAMES - 1] = frame_escolhido;
             break;
         }
     }
-    LeaveCriticalSection(&pool->mutex_cache);
+
+    if (frame_escolhido == -1) {
+        LeaveCriticalSection(&bp->mutex_pool);
+        return NULL;
+    }
+
+    FrameBuffer* f = &bp->pool[frame_escolhido];
+    EnterCriticalSection(&f->mutex_frame);
+
+    if (f->id_pagina != DESLOCAMENTO_NULO && f->dirty) {
+        fseek(arquivo, f->id_pagina * sizeof(PaginaBTree), SEEK_SET);
+        fwrite(&f->pagina, sizeof(PaginaBTree), 1, arquivo);
+        metrica_escritas_disco++;
+    }
+
+    f->id_pagina = id_pagina;
+    f->pin_count = 1;
+    f->dirty = false;
+
+    fseek(arquivo, id_pagina * sizeof(PaginaBTree), SEEK_SET);
+    if (fread(&f->pagina, sizeof(PaginaBTree), 1, arquivo) != 1) {
+        memset(&f->pagina, 0, sizeof(PaginaBTree));
+    }
+    metrica_leituras_disco++;
+
+    LeaveCriticalSection(&f->mutex_frame);
+    LeaveCriticalSection(&bp->mutex_pool);
+    return f;
 }
 
-void flush_buffer_pool(BufferPool* pool, FILE* arquivo_db) {
-    EnterCriticalSection(&pool->mutex_cache);
-    for (int i = 0; i < MAX_FRAMES; i++) {
-        if (pool->frames[i].id_pagina != DESLOCAMENTO_NULO && pool->frames[i].dirty) {
-            escrever_pagina(arquivo_db, pool->frames[i].id_pagina, &pool->frames[i].pagina);
-            pool->frames[i].dirty = false;
+void unpin_pagina(BufferPool* bp, int64_t id_pagina, bool dirty) {
+    EnterCriticalSection(&bp->mutex_pool);
+    for (int32_t i = 0; i < NUM_FRAMES; i++) {
+        if (bp->pool[i].id_pagina == id_pagina) {
+            if (dirty) bp->pool[i].dirty = true;
+            bp->pool[i].pin_count--;
+            break;
         }
     }
-    LeaveCriticalSection(&pool->mutex_cache);
+    LeaveCriticalSection(&bp->mutex_pool);
 }
 
-void destruir_buffer_pool(BufferPool* pool, FILE* arquivo_db) {
-    flush_buffer_pool(pool, arquivo_db);
-    DeleteCriticalSection(&pool->mutex_cache);
+int64_t alocar_pagina(FILE* arquivo, SuperBloco* sb) {
+    int64_t id;
+    if (sb->proxima_pagina_livre != DESLOCAMENTO_NULO) {
+        id = sb->proxima_pagina_livre;
+        PaginaBTree p;
+        fseek(arquivo, id * sizeof(PaginaBTree), SEEK_SET);
+        if (fread(&p, sizeof(PaginaBTree), 1, arquivo) == 1) {
+            sb->proxima_pagina_livre = p.deslocamentos_filhos[0];
+        } else {
+            sb->proxima_pagina_livre = DESLOCAMENTO_NULO;
+        }
+        metrica_leituras_disco++;
+    } else {
+        fseek(arquivo, 0, SEEK_END);
+        id = ftell(arquivo) / sizeof(PaginaBTree);
+        if (id == 0) id = 1; // ID 0 é exclusivo do SuperBloco
+        
+        // CORREÇÃO: Força o arquivo a crescer fisicamente no disco 
+        // para que o próximo ftell() retorne o tamanho atualizado!
+        int64_t offset_final_nova_pagina = (id + 1) * sizeof(PaginaBTree) - 1;
+        fseek(arquivo, offset_final_nova_pagina, SEEK_SET);
+        fputc('\0', arquivo);
+    }
+    return id;
+}
+
+void liberar_id_pagina(SuperBloco* sb, int64_t id_pagina) {
+    PaginaBTree p;
+    memset(&p, 0, sizeof(PaginaBTree));
+    p.deslocamentos_filhos[0] = sb->proxima_pagina_livre;
+    sb->proxima_pagina_livre = id_pagina;
+}
+
+void ler_superbloco(FILE* arquivo, SuperBloco* sb) {
+    fseek(arquivo, 0, SEEK_SET);
+    if (fread(sb, sizeof(SuperBloco), 1, arquivo) != 1) {
+        sb->id_pagina_raiz = DESLOCAMENTO_NULO;
+        sb->proxima_pagina_livre = DESLOCAMENTO_NULO;
+    }
+}
+
+void escrever_superbloco(FILE* arquivo, SuperBloco* sb) {
+    fseek(arquivo, 0, SEEK_SET);
+    fwrite(sb, sizeof(SuperBloco), 1, arquivo);
+    fsync_interno(arquivo);
 }
