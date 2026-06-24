@@ -115,7 +115,8 @@ int main() {
         printf("==================================================\n");
         printf(" 1. Executar Modo Benchmark (Carga 1M)\n");
         printf(" 2. Entrar no Modo Manual (Console CLI)\n");
-        printf(" 3. Sair e Salvar tudo\n");
+        printf(" 3. Exportar para csv\n");
+        printf(" 4. Salvar e sair\n");
         printf("==================================================\n");
         printf("Escolha uma opcao: ");
         fflush(stdout);
@@ -137,7 +138,11 @@ int main() {
                 executar_modo_manual(&btree);
                 break;
             case 3:
-                printf("\n[+] Desalocando frames do Buffer Pool e sincronizando disco...\n");
+                printf("\n[+] Exportando banco para 'dados_exportados.csv'...\n");
+                exportar_btree_para_csv(&btree, "dados_exportados.csv");
+                break;
+            case 4:
+                printf("\n[+] Encerrando...\n");
                 break;
             default:
                 printf("\n[!] Opcao invalida. Tente novamente.\n\n");

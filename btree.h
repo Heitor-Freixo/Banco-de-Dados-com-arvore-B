@@ -19,6 +19,7 @@ typedef struct {
 
 void inicializar_btree(GerenciadorBTree* btree, FILE* arquivo);
 void destruir_btree(GerenciadorBTree* btree);
+void exportar_btree_para_csv(GerenciadorBTree* btree, const char* nome_arquivo);
 ResultadoBusca buscar_chave(GerenciadorBTree* btree, int32_t chave_matricula);
 bool inserir_chave(GerenciadorBTree* btree, int32_t chave_matricula, deslocamento_disco_t deslocamento_registro);
 bool remover_chave(GerenciadorBTree* btree, int32_t chave_matricula);

@@ -260,3 +260,50 @@ bool remover_chave(GerenciadorBTree* btree, int32_t chave_matricula) {
     fsync_interno(btree->arquivo_db);
     return true; 
 }
+
+// Função recursiva auxiliar para varrer a árvore e escrever no CSV
+void exportar_recursivo(GerenciadorBTree* btree, int64_t id_pagina, FILE* csv) {
+    if (id_pagina == DESLOCAMENTO_NULO) return;
+
+    // Fixa a página no Buffer Pool
+    FrameBuffer* f = pin_pagina(&btree->pool, btree->arquivo_db, id_pagina);
+    EnterCriticalSection(&f->mutex_frame);
+    PaginaBTree* p = &f->pagina;
+
+    // Se não for folha, visita o filho da esquerda primeiro
+    if (!p->cabecalho.eh_folha) {
+        exportar_recursivo(btree, p->deslocamentos_filhos[0], csv);
+    }
+
+    // Processa as chaves desta página
+    for (int32_t i = 0; i < p->cabecalho.qtd_chaves; i++) {
+        fprintf(csv, "%d,%lld\n", p->chaves[i], p->deslocamentos_registros[i]);
+        
+        // Se não for folha, visita o próximo filho
+        if (!p->cabecalho.eh_folha) {
+            exportar_recursivo(btree, p->deslocamentos_filhos[i + 1], csv);
+        }
+    }
+
+    LeaveCriticalSection(&f->mutex_frame);
+    unpin_pagina(&btree->pool, id_pagina, false);
+}
+
+// Função principal de exportação
+void exportar_btree_para_csv(GerenciadorBTree* btree, const char* nome_arquivo) {
+    FILE* csv = fopen(nome_arquivo, "w");
+    if (!csv) {
+        printf("[ERRO] Nao foi possivel criar o arquivo CSV.\n");
+        return;
+    }
+
+    // Cabeçalho do CSV
+    fprintf(csv, "chave,deslocamento_disco\n");
+
+    if (btree->superbloco.id_pagina_raiz != DESLOCAMENTO_NULO) {
+        exportar_recursivo(btree, btree->superbloco.id_pagina_raiz, csv);
+    }
+
+    fclose(csv);
+    printf("[SUCESSO] Dados exportados para '%s'.\n", nome_arquivo);
+}
