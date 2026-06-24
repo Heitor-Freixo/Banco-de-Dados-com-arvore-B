@@ -28,3 +28,6 @@ Erros Superados:
 Parte 6: Para otimizar o acesso ao disco, criamos um Buffer Cache na RAM com capacidade para 16 páginas. Utilizando a política de substituição LRU (Least Recently Used) por meio de uma lista duplamente ligada, garantimos que as páginas menos utilizadas sejam descartadas primeiro para abrir espaço quando o cache lotar.
 
 Para suportar concorrência sem corrupção de dados, adotamos o mecanismo de Pins e Unpins: enquanto uma thread utiliza um nó, ele fica fixado e protegido contra descarte. Além disso, implementamos a escrita postergada (Dirty Bit), onde as modificações só são salvas fisicamente no arquivo quando a página precisa ser liberada do cache ou no encerramento do sistema. Toda a Árvore B foi refatorada e limpa para operar exclusivamente através dessa memória virtual.
+
+## 24/06/26
+Os erros que estavam acontecendo(eu estava rodando o arquivo errado) foram corrigidos, multiplas funções foram acrescentadas(sair, benchmark, manual) e agora temos a possibilidade de transformar todos os dados gerados em um csv de 1000002 de linhas.
