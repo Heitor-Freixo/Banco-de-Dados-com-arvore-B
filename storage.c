@@ -37,7 +37,6 @@ void inicializar_buffer_pool(BufferPool* bp) {
 void destruir_buffer_pool(BufferPool* bp, FILE* arquivo) {
     for (int32_t i = 0; i < NUM_FRAMES; i++) {
         EnterCriticalSection(&bp->pool[i].mutex_frame);
-        // CORRIGIDO: Removido o 'DESCORRETO_NULO' duplicado/errado
         if (bp->pool[i].id_pagina != DESLOCAMENTO_NULO && bp->pool[i].dirty) {
             fseek(arquivo, bp->pool[i].id_pagina * sizeof(PaginaBTree), SEEK_SET);
             fwrite(&bp->pool[i].pagina, sizeof(PaginaBTree), 1, arquivo);
@@ -142,10 +141,9 @@ int64_t alocar_pagina(FILE* arquivo, SuperBloco* sb) {
     } else {
         fseek(arquivo, 0, SEEK_END);
         id = ftell(arquivo) / sizeof(PaginaBTree);
-        if (id == 0) id = 1; // ID 0 é exclusivo do SuperBloco
+        if (id == 0) id = 1; 
         
-        // CORREÇÃO: Força o arquivo a crescer fisicamente no disco 
-        // para que o próximo ftell() retorne o tamanho atualizado!
+        // Expande o arquivo fisicamente no disco para evitar o loop infinito no ftell
         int64_t offset_final_nova_pagina = (id + 1) * sizeof(PaginaBTree) - 1;
         fseek(arquivo, offset_final_nova_pagina, SEEK_SET);
         fputc('\0', arquivo);

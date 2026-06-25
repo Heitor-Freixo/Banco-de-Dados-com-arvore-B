@@ -4,17 +4,14 @@
 #include <stdint.h>
 #include "btree.h"
 
-// Função auxiliar para o Modo Benchmark (Carga Massiva)
 void executar_benchmark(GerenciadorBTree* btree) {
     printf("\n==================================================\n");
     printf("   INICIANDO CARGA MASSIVA DE 1.000.000 REGISTROS \n");
     printf("==================================================\n\n");
 
     for (int32_t i = 1; i <= 1000000; i++) {
-        // Insere a chave e calcula um deslocamento fictício de registro
         inserir_chave(btree, i, (deslocamento_disco_t)i * 8);
         
-        // Atualiza a barra de progresso a cada 20.000 chaves
         if (i % 20000 == 0) {
             int percentual = i / 10000;
             printf("\rProgresso: [");
@@ -37,7 +34,6 @@ void executar_benchmark(GerenciadorBTree* btree) {
     printf("==================================================\n\n");
 }
 
-// Função auxiliar para o Modo Manual (Prompt interativo)
 void executar_modo_manual(GerenciadorBTree* btree) {
     char comando[32];
     int32_t chave;
@@ -89,7 +85,6 @@ void executar_modo_manual(GerenciadorBTree* btree) {
         } 
         else {
             printf("[ERRO] Comando desconhecido. Use: inserir, buscar, status ou sair.\n");
-            // Limpa o buffer de entrada residual
             int c;
             while ((c = getchar()) != '\n' && c != EOF);
         }
@@ -97,7 +92,6 @@ void executar_modo_manual(GerenciadorBTree* btree) {
 }
 
 int main() {
-    // Abre ou cria o arquivo de banco de dados definitivo
     FILE* arquivo = fopen("banco_oficial.db", "rb+");
     if (!arquivo) arquivo = fopen("banco_oficial.db", "wb+");
     if (!arquivo) {
@@ -109,7 +103,7 @@ int main() {
     inicializar_btree(&btree, arquivo);
 
     int opcao = 0;
-    while (opcao != 3) {
+    while (opcao != 4) {
         printf("==================================================\n");
         printf("           SGBD INTERATIVO (B-TREE + BUFFER)      \n");
         printf("==================================================\n");
@@ -122,7 +116,6 @@ int main() {
         fflush(stdout);
         
         if (scanf("%d", &opcao) != 1) {
-            // Tratamento caso o usuario digite letras no menu
             int c;
             while ((c = getchar()) != '\n' && c != EOF);
             opcao = 0;
@@ -150,7 +143,6 @@ int main() {
         }
     }
 
-    // Garante o encerramento seguro e o flush final do buffer para o arquivo físico
     destruir_btree(&btree);
     fclose(arquivo);
     

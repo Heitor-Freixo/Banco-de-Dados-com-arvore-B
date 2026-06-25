@@ -1,41 +1,32 @@
-# Variáveis de Compilação
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=c11 -g
-# CFLAGS += -fsanitize=address -fsanitize=undefined
 
-# Arquivos e Diretórios
-ALVO = mini_sgbd
-FONTES = main.c btree.c storage.c
-OBJETOS = $(FONTES:.c=.o)
+# Nome do executável
+TARGET = sgbd.exe
 
-# Alvo Padrão (Compila o executável main)
-all: $(ALVO)
+OBJS = main.o btree.o storage.o
 
-$(ALVO): $(OBJETOS)
-	$(CC) $(CFLAGS) -o $@ $^
+all: $(TARGET)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
 
-# Alvo de Testes Unitários e Funcionais
-test: CFLAGS += -DMODO_TESTE
-test: clean $(OBJETOS)
-	$(CC) $(CFLAGS) -o executor_testes $(OBJETOS)
-	./executor_testes --unit
+main.o: main.c btree.h storage.h
+	$(CC) $(CFLAGS) -c main.c
 
-# Alvo de Teste de Estresse (Carga pesada para o relatório)
-stress: CFLAGS += -DMODO_ESTRESSE
-stress: clean $(OBJETOS)
-	$(CC) $(CFLAGS) -o executor_estresse $(OBJETOS)
-	./executor_estresse --stress
+btree.o: btree.c btree.h storage.h
+	$(CC) $(CFLAGS) -c btree.c
 
-# Limpeza dos arquivos compilados
-# Limpeza dos arquivos compilados (Ajustado para Windows)
+storage.o: storage.c storage.h
+	$(CC) $(CFLAGS) -c storage.c
+
+test: $(TARGET)
+	@echo [!] Executando testes basicos de insercao e busca...
+	@echo 2 inserir 10 inserir 20 buscar 10 status sair 4 | $(TARGET)
+
+stress: $(TARGET)
+	@echo [!] Executando teste de estresse (Benchmark 1M)...
+	@echo 1 4 | $(TARGET)
+
 clean:
-	@if exist $(ALVO) del /f /q $(ALVO)
-	@if exist executor_testes del /f /q executor_testes
-	@if exist executor_estresse del /f /q executor_estresse
-	@if exist *.o del /f /q *.o
-	@if exist *.bin del /f /q *.bin
-	
-.PHONY: all test stress clean
+	del /f /q *.o $(TARGET) *.db *.csv 2>nul || rm -f *.o $(TARGET) *.db *.csv

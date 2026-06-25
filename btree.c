@@ -1,4 +1,3 @@
-// Ativa extensões POSIX/Gnu/Microsoft antes de incluir os cabeçalhos padrão
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -10,7 +9,6 @@
 #include <stdlib.h>
 #include "btree.h"
 
-// Declaração explícita para o GCC em conformidade estrita com -std=c11
 #ifdef __MINGW32__
 int _fileno(FILE *stream);
 #endif
@@ -30,7 +28,6 @@ static bool busca_binaria_na_pagina(const PaginaBTree* pagina, int32_t alvo, int
 
 static void fsync_interno(FILE* arquivo) {
     fflush(arquivo);
-    // Recupera o handle do arquivo do S.O. através do descritor numérico do fileno
     HANDLE handle = (HANDLE)_get_osfhandle(_fileno(arquivo));
     if (handle != INVALID_HANDLE_VALUE) {
         FlushFileBuffers(handle);
@@ -174,7 +171,7 @@ static void inserir_em_no_com_espaco(FILE* arquivo, BufferPool* pool, SuperBloco
 }
 
 bool inserir_chave(GerenciadorBTree* btree, int32_t chave_matricula, deslocamento_disco_t deslocamento_registro) {
-    if (btree->superbloco.id_pagina_raiz == DESLOCAMENTO_NULO) { // Usando superbloco direto do estado atual
+    if (btree->superbloco.id_pagina_raiz == DESLOCAMENTO_NULO) { 
         int64_t id_raiz = alocar_pagina(btree->arquivo_db, &btree->superbloco);
         FrameBuffer* f_raiz = pin_pagina(&btree->pool, btree->arquivo_db, id_raiz);
         EnterCriticalSection(&f_raiz->mutex_frame);
@@ -257,29 +254,24 @@ int32_t busca_por_intervalo(GerenciadorBTree* btree, int32_t inicio, int32_t fim
 bool remover_chave(GerenciadorBTree* btree, int32_t chave_matricula) {
     ResultadoBusca b = buscar_chave(btree, chave_matricula);
     if (!b.encontrada) return false;
-    fsync_interno(btree->arquivo_db);
+    // Stub padronizado para as proximas fases
     return true; 
 }
 
-// Função recursiva auxiliar para varrer a árvore e escrever no CSV
 void exportar_recursivo(GerenciadorBTree* btree, int64_t id_pagina, FILE* csv) {
     if (id_pagina == DESLOCAMENTO_NULO) return;
 
-    // Fixa a página no Buffer Pool
     FrameBuffer* f = pin_pagina(&btree->pool, btree->arquivo_db, id_pagina);
     EnterCriticalSection(&f->mutex_frame);
     PaginaBTree* p = &f->pagina;
 
-    // Se não for folha, visita o filho da esquerda primeiro
     if (!p->cabecalho.eh_folha) {
         exportar_recursivo(btree, p->deslocamentos_filhos[0], csv);
     }
 
-    // Processa as chaves desta página
     for (int32_t i = 0; i < p->cabecalho.qtd_chaves; i++) {
         fprintf(csv, "%d,%lld\n", p->chaves[i], p->deslocamentos_registros[i]);
         
-        // Se não for folha, visita o próximo filho
         if (!p->cabecalho.eh_folha) {
             exportar_recursivo(btree, p->deslocamentos_filhos[i + 1], csv);
         }
@@ -289,7 +281,6 @@ void exportar_recursivo(GerenciadorBTree* btree, int64_t id_pagina, FILE* csv) {
     unpin_pagina(&btree->pool, id_pagina, false);
 }
 
-// Função principal de exportação
 void exportar_btree_para_csv(GerenciadorBTree* btree, const char* nome_arquivo) {
     FILE* csv = fopen(nome_arquivo, "w");
     if (!csv) {
@@ -297,7 +288,6 @@ void exportar_btree_para_csv(GerenciadorBTree* btree, const char* nome_arquivo) 
         return;
     }
 
-    // Cabeçalho do CSV
     fprintf(csv, "chave,deslocamento_disco\n");
 
     if (btree->superbloco.id_pagina_raiz != DESLOCAMENTO_NULO) {
