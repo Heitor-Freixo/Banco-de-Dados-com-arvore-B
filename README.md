@@ -3,4 +3,4 @@
 Trabalho interdisciplinar de Estrutura de Dados e Sistemas Operacionais (IFES - Campus Cachoeiro). 
 
 ## Como Compilar
-A ser implementado via Makefile. 
+No terminal dentro da pasta principal digite make, logo depois ./mini_sgbd
